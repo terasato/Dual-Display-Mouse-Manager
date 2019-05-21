@@ -1,25 +1,23 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Windows.Forms;
 using Microsoft.VisualBasic.ApplicationServices;
 
 namespace DDMM
 {
-    static class Program
+    internal static class Program
     {
         /// <summary>
-        /// The main entry point for the application.
+        ///     The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        private static void Main()
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
             //Application.Run(new DDMM_Form());
-            string[] args = Environment.GetCommandLineArgs();
-            SingleInstanceController controller = new SingleInstanceController();
+            var args = Environment.GetCommandLineArgs();
+            var controller = new SingleInstanceController();
             controller.Run(args);
         }
     }
@@ -32,9 +30,9 @@ namespace DDMM
             StartupNextInstance += this_StartupNextInstance;
         }
 
-        void this_StartupNextInstance(object sender, StartupNextInstanceEventArgs e)
+        private void this_StartupNextInstance(object sender, StartupNextInstanceEventArgs e)
         {
-            DDMM_Form form = MainForm as DDMM_Form;
+            var form = MainForm as DDMM_Form;
             form.NotifyNewInstance();
         }
 
@@ -42,7 +40,5 @@ namespace DDMM
         {
             MainForm = new DDMM_Form();
         }
-
     }
-
 }
