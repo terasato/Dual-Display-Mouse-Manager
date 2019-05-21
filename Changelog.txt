@@ -1,0 +1,26 @@
+To do:
+* Install a global hook to reclip mouse upon focus change, and not each 1/2 sec
+* Allow shortcut changes for the following functions:
+  - Enable/disable mouse management
+  - Restore settings
+  - Teleport mouse to the next region
+  - Teleport mouse to the previous region (also needs added support)
+* In automatic mode - detect the actual touching boundaries of adjacent displays and not only boundaries of the current display, and fire tray icon notification only on touching boundaries.
+* Create and destroy the preview forms instead of only hiding them.
+
+v.1.1
+* Preview rectangles were set as option, allowing to enable / disable them, with default disabled.
+* Fully automatic mode was added and set as default:
+  - The program reacts automatically to any display configuration/resolution changes.
+  - Preview rectangles are updated accordingly, if preview enabled and program not minimized.
+  - Coordinates are automatically recalculated for any change and can't be entered manually in automatic mode.
+* "Mouse teleport" mechanism was added to teleport mouse between displays with a keyboard shortcut.
+* Some optimizations were made in the code to reduce CPU load on mouse movement.
+* Since the program has no taskbar icon, it can be "lost" when the focus is lost, so the window was made topmost when open, and its design was changed a bit to incorporate new options.
+* Changed the tray icon menu to include "restore" option.
+* Changed the tray icon left click behavior to restore on single click.
+* Added exit hook, removing the global hooks and restoring control on forced exit
+
+
+v.1.0b
+* Base version released
