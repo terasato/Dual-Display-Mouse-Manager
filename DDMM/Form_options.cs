@@ -6,7 +6,6 @@ the Free Software Foundation; version 2 of the License.
 */
 
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -18,67 +17,68 @@ using File = System.IO.File;
 
 namespace DDMM
 {
-    public partial class DDMM_Form : Form
+    public partial class DdmmForm : Form
     {
         # region Class constructor ------------------------------------------------------------------------------------
 
-        public DDMM_Form()
+        public DdmmForm()
         {
             InitializeComponent();
 
             # region Variables ----------------------------------------------------------------------------------------
 
             // screen objects, that will store screen coordinates and contain a preview rectangle form
-            Screens = new Screen[4]; // we will use cells 1 to 3 only - I don't like having "screen 2" in cell 1
-            var ScreenColors = new Color[4] {Color.Black, Color.Lime, Color.Blue, Color.Orange};
+            _screens = new Screen[4]; // we will use cells 1 to 3 only - I don't like having "screen 2" in cell 1
+            var screenColors = new[] {Color.Black, Color.Lime, Color.Blue, Color.Orange};
             for (var i = 1; i <= 3; i++)
             {
-                Screens[i] = new Screen();
-                Screens[i].form_s.Owner = this;
-                Screens[i].form_s.borderColor = ScreenColors[i];
-                Screens[i].form_s.FormName = "Screen " + i;
-                Screens[i].form_s.LocationChanged += CheckWhyPreviewMoved;
+                _screens[i] = new Screen();
+                _screens[i].FormS.Owner = this;
+                _screens[i].FormS.BorderColor = screenColors[i];
+                _screens[i].FormS.FormName = "Screen " + i;
+                _screens[i].FormS.LocationChanged += CheckWhyPreviewMoved;
             }
 
-            GetClipCursor(ref OrigClipRect); // store original clipping zone
-            CurrentClipRect = new Rectangle(); // current clipping zone
+            GetClipCursor(ref _origClipRect); // store original clipping zone
+            _currentClipRect = new Rectangle(); // current clipping zone
 
             # endregion
 
             #region Mouse clipping -----------------------------------------------------------------------------------
 
-            clipTimer = new Timer(); // timer to reactivate mouse clipping periodically (because alt-tabbing between 2 other apps will deactivate clipping)
-            clipTimer.Interval = 500; // reactivate mouse clipping every 500 ms
-            clipTimer.Tick += setClip;
-            clipTimer.Start();
+            _clipTimer =
+                new Timer(); // timer to reactivate mouse clipping periodically (because alt-tabbing between 2 other apps will deactivate clipping)
+            _clipTimer.Interval = 500; // reactivate mouse clipping every 500 ms
+            _clipTimer.Tick += SetClip;
+            _clipTimer.Start();
 
-            UnclipTimer =
+            _unclipTimer =
                 new Timer(); // timer to deactivate clipping when user places the cursor on the border of the screen for N milliseconds (N is configurable)
-            UnclipTimer.Tick += UnClip;
+            _unclipTimer.Tick += UnClip;
 
-            ReclipTimer = new Timer(); // timer to reactivate clipping after letting the cursor cross screen borders
-            ReclipTimer.Interval = 100; // 100ms allowed to cross screen border before clipping again
-            ReclipTimer.Tick += ReClip;
+            _reclipTimer = new Timer(); // timer to reactivate clipping after letting the cursor cross screen borders
+            _reclipTimer.Interval = 100; // 100ms allowed to cross screen border before clipping again
+            _reclipTimer.Tick += ReClip;
 
-            PreviewTimer = new Timer(); // timer to move preview screens back to their locations
-            PreviewTimer.Interval = 1000; // 1 sec delay allowed to prevent system overhead
-            PreviewTimer.Tick += PreviewRestoreAfterTimer;
+            _previewTimer = new Timer(); // timer to move preview screens back to their locations
+            _previewTimer.Interval = 1000; // 1 sec delay allowed to prevent system overhead
+            _previewTimer.Tick += PreviewRestoreAfterTimer;
 
             #endregion
 
             #region Mouse hook ---------------------------------------------------------------------------------------
 
             // get mouse coordinates even if app runs on background (hook)
-            m_callback = LowLevelMouseProc;
-            mhook = SetWindowsHookEx(WH_MOUSE_LL, m_callback, GetModuleHandle(null), 0);
+            _mCallback = LowLevelMouseProc;
+            _mhook = SetWindowsHookEx(WhMouseLl, _mCallback, GetModuleHandle(null), 0);
 
             #endregion
 
             #region Keyboard hook ------------------------------------------------------------------------------------
 
             // get key presses even if app runs on background (hook)
-            k_callback = LowLevelKeyboardProc;
-            khook = SetWindowsHookEx(WH_KEYBOARD_LL, k_callback, GetModuleHandle(null), 0);
+            _kCallback = LowLevelKeyboardProc;
+            _khook = SetWindowsHookEx(WhKeyboardLl, _kCallback, GetModuleHandle(null), 0);
 
             #endregion
 
@@ -105,7 +105,7 @@ namespace DDMM
 
             LoadSettings(); // load previously input settings
             ApplySettings(); // apply current settings
-            HandleSettingsChanges = true; // so that further changes in settings will trigger data validation
+            _handleSettingsChanges = true; // so that further changes in settings will trigger data validation
 
             # endregion
         }
@@ -121,67 +121,67 @@ namespace DDMM
 
         private class Screen
         {
-            public readonly Form_screen form_s; // preview form (colored rectangle)
+            public readonly FormScreen FormS; // preview form (colored rectangle)
             public int Left, Right, Top, Bottom; // coordinates
-            public bool ok; // are screen coordinates ok
+            public bool Ok; // are screen coordinates ok
 
             public Screen()
             {
-                form_s = new Form_screen();
+                FormS = new FormScreen();
             }
         }
 
-        private readonly Screen[] Screens;
+        private readonly Screen[] _screens;
 
-        private readonly IntPtr mhook; // Hook pointers for mouse and keyboard hooks
-        private readonly IntPtr khook; // Hook pointers for mouse and keyboard hooks
+        private readonly IntPtr _mhook; // Hook pointers for mouse and keyboard hooks
+        private readonly IntPtr _khook; // Hook pointers for mouse and keyboard hooks
 
-        private bool HandleSettingsChanges = false; // will be set to true after loading settings
+        private bool _handleSettingsChanges = false; // will be set to true after loading settings
 
         private bool
-            UpdatingPreview =
+            _updatingPreview =
                 false; // set to true when updating preview rectangles, because sometimes desktop managers throw them around
 
-        private Rectangle OrigClipRect; // original clipping zone (used to restore previous state)
-        private Rectangle CurrentClipRect; // current clipping zone (used to reactivate clipping periodically)
+        private Rectangle _origClipRect; // original clipping zone (used to restore previous state)
+        private Rectangle _currentClipRect; // current clipping zone (used to reactivate clipping periodically)
 
         private Rectangle
-            DummyClipRect; // dummy Rectangle variable to pass to ClipCursor(), because it seems that Clipcursor() needs a "top-left-right-bottom" rectangle instead of c# standard "top-left-width-height"
+            _dummyClipRect; // dummy Rectangle variable to pass to ClipCursor(), because it seems that Clipcursor() needs a "top-left-right-bottom" rectangle instead of c# standard "top-left-width-height"
 
-        private bool ActivateProgram = false; // is the program (mouse management) activated
-        private bool ActiveClip = false; // is the cursor currently clipped
+        private bool _activateProgram = false; // is the program (mouse management) activated
+        private bool _activeClip = false; // is the cursor currently clipped
 
         private bool
-            CanClip = true; // is it allowed to activate clipping (it is not allowed when holding ctrl key, and not allowed during 100ms when we release cursor)
+            _canClip = true; // is it allowed to activate clipping (it is not allowed when holding ctrl key, and not allowed during 100ms when we release cursor)
 
-        private bool UseAutoBounds = false; // Uses automatic screen boundary control
-        private bool UsePreview = false; // Uses preview screens for region selection
+        private bool _useAutoBounds = false; // Uses automatic screen boundary control
+        private bool _usePreview = false; // Uses preview screens for region selection
 
         private readonly Color
-            tb_color_ok = Color.White; // textboxes color when input values are correct / incorrect: white / grey
+            _tbColorOk = Color.White; // textboxes color when input values are correct / incorrect: white / grey
 
-        private readonly Color tb_color_nok = SystemColors.Control;
+        private readonly Color _tbColorNok = SystemColors.Control;
 
-        private bool Method_Delay; // do we use "release cursor after delay" feature
-        private bool Method_CtrlKey; // do we use "release cursor on ctrl key" feature
-        private int UnClipDelay; // cursor release delay
-        private bool UseMouseJump; // do we use "mouse teleport" feature on pressing Ctrl + ~
+        private bool _methodDelay; // do we use "release cursor after delay" feature
+        private bool _methodCtrlKey; // do we use "release cursor on ctrl key" feature
+        private int _unClipDelay; // cursor release delay
+        private bool _useMouseJump; // do we use "mouse teleport" feature on pressing Ctrl + ~
 
         private const string StartWithWindowsRegPath // path to registry entry for automatic startup
             = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-        private readonly string StartMenuShortcutPath = // path to start menu shortcut
+        private readonly string _startMenuShortcutPath = // path to start menu shortcut
             Path.Combine(Path.Combine(Path.Combine( // concatenate "start menu", "programs", "DDMM", lnk file
                 Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs"), "DDMM"), "ddmm.lnk");
 
-        private readonly Timer clipTimer; // sets clipping again every second or so
-        private readonly Timer UnclipTimer; // removes clipping after N milliseconds on screen border
+        private readonly Timer _clipTimer; // sets clipping again every second or so
+        private readonly Timer _unclipTimer; // removes clipping after N milliseconds on screen border
 
         private readonly Timer
-            ReclipTimer; // sets clipping again after N milliseconds of letting the cursor cross border
+            _reclipTimer; // sets clipping again after N milliseconds of letting the cursor cross border
 
         private readonly Timer
-            PreviewTimer; // updates preview screens when moved, delayed to allow less overhead on system changes
+            _previewTimer; // updates preview screens when moved, delayed to allow less overhead on system changes
 
         # endregion
 
@@ -199,28 +199,28 @@ namespace DDMM
         [DllImport("user32.dll")]
         private static extern bool GetClipCursor(ref Rectangle lpRect);
 
-        private void setClip(object sender, EventArgs eArgs) // reactivates mouse clipping
+        private void SetClip(object sender, EventArgs eArgs) // reactivates mouse clipping
         {
             // Needs to be substituted with external DLL w/ global hook
-            if (ActivateProgram && ActiveClip)
-                ClipCursor(ref DummyClipRect);
-            if (UsePreview)
+            if (_activateProgram && _activeClip)
+                ClipCursor(ref _dummyClipRect);
+            if (_usePreview)
                 DrawOnTaskBar(); // also make sure screens previews can draw on top of taskbar (must be done periodically too, since taskbar must be brought to front when switching between apps)
         }
 
         private void UnClip(object sender, EventArgs eArgs) // releases clipping after N milliseconds on screen border
         {
-            ClipCursor(ref OrigClipRect); // clip to original zone
-            ActiveClip = false; // no active clip
-            CanClip = false; // prevent re-clipping for a while
+            ClipCursor(ref _origClipRect); // clip to original zone
+            _activeClip = false; // no active clip
+            _canClip = false; // prevent re-clipping for a while
             notifyIcon1.Icon = new Icon(GetType(), "ddmm_normal.ico"); // tray icon = no activated screen
-            ReclipTimer.Start(); // prepares re-clipping with timer
+            _reclipTimer.Start(); // prepares re-clipping with timer
         }
 
         private void ReClip(object sender, EventArgs eArgs) // ends cursor releasing period
         {
-            CanClip = true; // we dont reactivate clipping, we just flag clipping as allowed
-            ReclipTimer.Stop(); // stop this timer
+            _canClip = true; // we dont reactivate clipping, we just flag clipping as allowed
+            _reclipTimer.Stop(); // stop this timer
         }
 
         #endregion
@@ -243,8 +243,8 @@ namespace DDMM
 
         #region Mouse hook -------------------------------------------------------------------------------------------
 
-        private readonly HookProc m_callback;
-        private static readonly int WH_MOUSE_LL = 14;
+        private readonly HookProc _mCallback;
+        private static readonly int WhMouseLl = 14;
 
         private delegate IntPtr HookProc(int nCode, uint wParam, IntPtr lParam);
 
@@ -258,10 +258,10 @@ namespace DDMM
 
         #region Keyboard hook ----------------------------------------------------------------------------------------
 
-        private readonly HookProc k_callback;
-        private static readonly int WH_KEYBOARD_LL = 13;
-        private static readonly int WM_KEYDOWN = 0x100;
-        private static readonly int WM_KEYUP = 0x101;
+        private readonly HookProc _kCallback;
+        private static readonly int WhKeyboardLl = 13;
+        private static readonly int WmKeydown = 0x100;
+        private static readonly int WmKeyup = 0x101;
 
         private IntPtr LowLevelKeyboardProc(int nCode, uint wParam, IntPtr lParam)
         {
@@ -272,14 +272,14 @@ namespace DDMM
             {
                 if (key == Keys.LControlKey)
                 {
-                    if (wParam == WM_KEYDOWN) CtrlKeyPressed(); // Call function for Ctrl key pressed / released
-                    if (wParam == WM_KEYUP) CtrlKeyReleased();
+                    if (wParam == WmKeydown) CtrlKeyPressed(); // Call function for Ctrl key pressed / released
+                    if (wParam == WmKeyup) CtrlKeyReleased();
                 }
 
-                if (wParam == WM_KEYDOWN && key == Keys.D && (Keys.Control | Keys.Alt) == ModifierKeys)
+                if (wParam == WmKeydown && key == Keys.D && (Keys.Control | Keys.Alt) == ModifierKeys)
                     EmergencyRestore(); // Ctrl+Alt+D: emergency restore ways of exiting mouse clipping
 
-                if (UseMouseJump && wParam == WM_KEYDOWN && key == Keys.Oemtilde && Keys.Control == ModifierKeys)
+                if (_useMouseJump && wParam == WmKeydown && key == Keys.Oemtilde && Keys.Control == ModifierKeys)
                     MouseTeleport(Cursor.Position.X,
                         Cursor.Position.Y); // Ctrl + ~ : teleports mouse to the next screen
             }
@@ -332,34 +332,34 @@ namespace DDMM
 
         private void PreviewScreens() // self-explanatory
         {
-            UpdatingPreview = true;
-            PreviewTimer.Stop();
+            _updatingPreview = true;
+            _previewTimer.Stop();
             for (var i = 1; i <= 3; i++)
-                if (UsePreview && Screens[i].ok)
+                if (_usePreview && _screens[i].Ok)
                     do
                     {
-                        Screens[i].form_s.Left = Screens[i].Left;
-                        Screens[i].form_s.Top = Screens[i].Top;
-                        Screens[i].form_s.Width = Screens[i].Right - Screens[i].Left;
-                        Screens[i].form_s.Height = Screens[i].Bottom - Screens[i].Top;
-                        Screens[i].form_s.Invalidate();
-                        Screens[i].form_s.Show();
-                    } while (Screens[i].form_s.Left != Screens[i].Left);
+                        _screens[i].FormS.Left = _screens[i].Left;
+                        _screens[i].FormS.Top = _screens[i].Top;
+                        _screens[i].FormS.Width = _screens[i].Right - _screens[i].Left;
+                        _screens[i].FormS.Height = _screens[i].Bottom - _screens[i].Top;
+                        _screens[i].FormS.Invalidate();
+                        _screens[i].FormS.Show();
+                    } while (_screens[i].FormS.Left != _screens[i].Left);
                 else
-                    Screens[i].form_s.Hide(); // dont't show if screen coordinates are not ok
+                    _screens[i].FormS.Hide(); // dont't show if screen coordinates are not ok
 
-            UpdatingPreview = false;
+            _updatingPreview = false;
         }
 
         private void CheckWhyPreviewMoved(object sender, EventArgs e)
         {
-            if (!UpdatingPreview)
-                PreviewTimer.Start();
+            if (!_updatingPreview)
+                _previewTimer.Start();
         }
 
         private void PreviewRestoreAfterTimer(object sender, EventArgs e)
         {
-            PreviewTimer.Stop();
+            _previewTimer.Stop();
             PreviewScreens();
         }
 
@@ -380,23 +380,23 @@ namespace DDMM
 
         private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
         {
-            if (UseAutoBounds)
+            if (_useAutoBounds)
             {
-                HandleSettingsChanges = false; // so that changing settings won't trigger data validation events
+                _handleSettingsChanges = false; // so that changing settings won't trigger data validation events
                 ClearSettings();
                 AutoDetectMonitors();
                 ApplySettings();
-                HandleSettingsChanges = true;
+                _handleSettingsChanges = true;
 
                 // change the tray icon according to the new screen position, using clip
-                ActiveClip = false; // no active clip
-                CanClip = true;
+                _activeClip = false; // no active clip
+                _canClip = true;
                 MouseMoved(Cursor.Position.X, Cursor.Position.Y);
 
                 // disable clipping if only one screen
-                ActiveClip = false;
+                _activeClip = false;
                 if (System.Windows.Forms.Screen.AllScreens.Length > 1)
-                    CanClip = true;
+                    _canClip = true;
 
                 PreviewScreens();
             }
@@ -407,19 +407,19 @@ namespace DDMM
         # region Draw over taskbar ------------------------------------------------------------------------------------
 
         // Allow preview rectangles to draw over the taskbar
-        private const uint SWP_NOSIZE = 0x0001;
-        private const uint SWP_NOMOVE = 0x0002;
-        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SwpNosize = 0x0001;
+        private const uint SwpNomove = 0x0002;
+        private const uint SwpNoactivate = 0x0010;
 
         [DllImport("user32.dll")]
-        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy,
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy,
             uint uFlags);
 
         private void DrawOnTaskBar()
         {
             for (var i = 1; i <= 3; i++)
-                SetWindowPos(Screens[i].form_s.Handle, IntPtr.Zero, 0, 0, 0, 0,
-                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
+                SetWindowPos(_screens[i].FormS.Handle, IntPtr.Zero, 0, 0, 0, 0,
+                    SwpNosize | SwpNomove | SwpNoactivate);
         }
 
         # endregion
@@ -469,25 +469,25 @@ namespace DDMM
         private void ApplySettings() // processes settings changes (after loading or modifying)
         {
             // general options
-            ActivateProgram = cb_activate.Checked;
-            if (ActivateProgram)
+            _activateProgram = cb_activate.Checked;
+            if (_activateProgram)
             {
-                CanClip = true; // allow clipping
+                _canClip = true; // allow clipping
             }
             else // program deactivated
             {
-                ClipCursor(ref OrigClipRect); // clip to original zone
-                ActiveClip = false; // no active clip
-                CanClip = false; // prevent re-clipping
+                ClipCursor(ref _origClipRect); // clip to original zone
+                _activeClip = false; // no active clip
+                _canClip = false; // prevent re-clipping
                 notifyIcon1.Icon = new Icon(GetType(), "ddmm_normal.ico"); // tray icon = white inactive icon
             }
 
             // show/hide systray icon
             notifyIcon1.Visible = !cb_hidetrayicon.Checked;
 
-            UseAutoBounds = cb_autobounds.Checked;
+            _useAutoBounds = cb_autobounds.Checked;
 
-            if (UseAutoBounds)
+            if (_useAutoBounds)
             {
                 tb_s1left.Enabled = false;
                 tb_s1right.Enabled = false;
@@ -520,129 +520,129 @@ namespace DDMM
             }
 
             // screens
-            for (var i = 1; i <= 3; i++) Screens[i].ok = true;
+            for (var i = 1; i <= 3; i++) _screens[i].Ok = true;
 
             try
             {
-                Screens[1].Left = Convert.ToInt32(tb_s1left.Text);
+                _screens[1].Left = Convert.ToInt32(tb_s1left.Text);
             }
             catch (Exception)
             {
-                Screens[1].ok = false;
-            }
-
-            try
-            {
-                Screens[1].Right = Convert.ToInt32(tb_s1right.Text);
-            }
-            catch (Exception)
-            {
-                Screens[1].ok = false;
+                _screens[1].Ok = false;
             }
 
             try
             {
-                Screens[1].Top = Convert.ToInt32(tb_s1top.Text);
+                _screens[1].Right = Convert.ToInt32(tb_s1right.Text);
             }
             catch (Exception)
             {
-                Screens[1].ok = false;
+                _screens[1].Ok = false;
             }
 
             try
             {
-                Screens[1].Bottom = Convert.ToInt32(tb_s1bottom.Text);
+                _screens[1].Top = Convert.ToInt32(tb_s1top.Text);
             }
             catch (Exception)
             {
-                Screens[1].ok = false;
+                _screens[1].Ok = false;
             }
 
             try
             {
-                Screens[2].Left = Convert.ToInt32(tb_s2left.Text);
+                _screens[1].Bottom = Convert.ToInt32(tb_s1bottom.Text);
             }
             catch (Exception)
             {
-                Screens[2].ok = false;
+                _screens[1].Ok = false;
             }
 
             try
             {
-                Screens[2].Right = Convert.ToInt32(tb_s2right.Text);
+                _screens[2].Left = Convert.ToInt32(tb_s2left.Text);
             }
             catch (Exception)
             {
-                Screens[2].ok = false;
+                _screens[2].Ok = false;
             }
 
             try
             {
-                Screens[2].Top = Convert.ToInt32(tb_s2top.Text);
+                _screens[2].Right = Convert.ToInt32(tb_s2right.Text);
             }
             catch (Exception)
             {
-                Screens[2].ok = false;
+                _screens[2].Ok = false;
             }
 
             try
             {
-                Screens[2].Bottom = Convert.ToInt32(tb_s2bottom.Text);
+                _screens[2].Top = Convert.ToInt32(tb_s2top.Text);
             }
             catch (Exception)
             {
-                Screens[2].ok = false;
+                _screens[2].Ok = false;
             }
 
             try
             {
-                Screens[3].Left = Convert.ToInt32(tb_s3left.Text);
+                _screens[2].Bottom = Convert.ToInt32(tb_s2bottom.Text);
             }
             catch (Exception)
             {
-                Screens[3].ok = false;
+                _screens[2].Ok = false;
             }
 
             try
             {
-                Screens[3].Right = Convert.ToInt32(tb_s3right.Text);
+                _screens[3].Left = Convert.ToInt32(tb_s3left.Text);
             }
             catch (Exception)
             {
-                Screens[3].ok = false;
+                _screens[3].Ok = false;
             }
 
             try
             {
-                Screens[3].Top = Convert.ToInt32(tb_s3top.Text);
+                _screens[3].Right = Convert.ToInt32(tb_s3right.Text);
             }
             catch (Exception)
             {
-                Screens[3].ok = false;
+                _screens[3].Ok = false;
             }
 
             try
             {
-                Screens[3].Bottom = Convert.ToInt32(tb_s3bottom.Text);
+                _screens[3].Top = Convert.ToInt32(tb_s3top.Text);
             }
             catch (Exception)
             {
-                Screens[3].ok = false;
+                _screens[3].Ok = false;
+            }
+
+            try
+            {
+                _screens[3].Bottom = Convert.ToInt32(tb_s3bottom.Text);
+            }
+            catch (Exception)
+            {
+                _screens[3].Ok = false;
             }
 
             for (var i = 1; i <= 3; i++)
             {
-                if (Screens[i].Right < Screens[i].Left) Screens[i].ok = false;
-                if (Screens[i].Bottom < Screens[i].Top) Screens[i].ok = false;
+                if (_screens[i].Right < _screens[i].Left) _screens[i].Ok = false;
+                if (_screens[i].Bottom < _screens[i].Top) _screens[i].Ok = false;
             }
 
             // different textboxes colors if data is correct or incorrect
             tb_s1left.BackColor = tb_s1right.BackColor =
-                tb_s1top.BackColor = tb_s1bottom.BackColor = Screens[1].ok ? tb_color_ok : tb_color_nok;
+                tb_s1top.BackColor = tb_s1bottom.BackColor = _screens[1].Ok ? _tbColorOk : _tbColorNok;
             tb_s2left.BackColor = tb_s2right.BackColor =
-                tb_s2top.BackColor = tb_s2bottom.BackColor = Screens[2].ok ? tb_color_ok : tb_color_nok;
+                tb_s2top.BackColor = tb_s2bottom.BackColor = _screens[2].Ok ? _tbColorOk : _tbColorNok;
             tb_s3left.BackColor = tb_s3right.BackColor =
-                tb_s3top.BackColor = tb_s3bottom.BackColor = Screens[3].ok ? tb_color_ok : tb_color_nok;
+                tb_s3top.BackColor = tb_s3bottom.BackColor = _screens[3].Ok ? _tbColorOk : _tbColorNok;
 
 
             // window state
@@ -661,22 +661,22 @@ namespace DDMM
 
             // screen border crossing method
 
-            Method_Delay = cb_allowcrossingdelay.Checked;
-            Method_CtrlKey = cb_allowcrossingctrlkey.Checked;
+            _methodDelay = cb_allowcrossingdelay.Checked;
+            _methodCtrlKey = cb_allowcrossingctrlkey.Checked;
 
-            UseMouseJump = cb_mousejump.Checked;
+            _useMouseJump = cb_mousejump.Checked;
 
             try
             {
-                UnClipDelay = Convert.ToInt32(tb_unclipdelay.Text);
-                UnclipTimer.Interval = UnClipDelay;
-                tb_unclipdelay.BackColor = tb_color_ok;
+                _unClipDelay = Convert.ToInt32(tb_unclipdelay.Text);
+                _unclipTimer.Interval = _unClipDelay;
+                tb_unclipdelay.BackColor = _tbColorOk;
             }
             catch (Exception)
             {
-                UnClipDelay = 0;
-                Method_Delay = false; // deactivate method if delay is incorrect
-                tb_unclipdelay.BackColor = tb_color_nok;
+                _unClipDelay = 0;
+                _methodDelay = false; // deactivate method if delay is incorrect
+                tb_unclipdelay.BackColor = _tbColorNok;
             }
         }
 
@@ -686,7 +686,7 @@ namespace DDMM
 
             Settings.Default.AutoBounds = cb_autobounds.Checked;
 
-            if (UseAutoBounds) // No need to save any coordinates if AutoBounds are used, they must be empty
+            if (_useAutoBounds) // No need to save any coordinates if AutoBounds are used, they must be empty
             {
                 ClearSettings();
             }
@@ -718,18 +718,18 @@ namespace DDMM
 
         private void bt_autodetectscreens_Click(object sender, EventArgs e) // auto detect multiple screens coordinates
         {
-            HandleSettingsChanges = false; // so that changing settings won't trigger data validation events
+            _handleSettingsChanges = false; // so that changing settings won't trigger data validation events
             ClearSettings();
             AutoDetectMonitors();
             ApplySettings();
-            HandleSettingsChanges = true;
+            _handleSettingsChanges = true;
 
             PreviewScreens();
 
             // now that clipping region changed, unlock cursor from previous settings and let clip again
-            ClipCursor(ref OrigClipRect); // clip to original zone
-            ActiveClip = false; // no active clip
-            CanClip = true; // allow re-clipping
+            ClipCursor(ref _origClipRect); // clip to original zone
+            _activeClip = false; // no active clip
+            _canClip = true; // allow re-clipping
         }
 
 
@@ -751,27 +751,27 @@ namespace DDMM
 
         private void ResetSettings() // simulates first run (ctrl-R tweak)
         {
-            HandleSettingsChanges = false;
+            _handleSettingsChanges = false;
             Settings.Default.Window_Minimized = false;
             ClearSettings();
             ApplySettings();
             SaveSettings();
-            HandleSettingsChanges = true;
+            _handleSettingsChanges = true;
 
             // now that clipping region changed, unlock cursor from previous settings and let clip again
-            ClipCursor(ref OrigClipRect); // clip to original zone
-            ActiveClip = false; // no active clip
-            CanClip = true; // allow re-clipping
+            ClipCursor(ref _origClipRect); // clip to original zone
+            _activeClip = false; // no active clip
+            _canClip = true; // allow re-clipping
         }
 
         private void OptionsChanged(object sender, EventArgs e) // triggered on controls textChange event
         {
-            if (HandleSettingsChanges) // do not handle event if change was made by loading settings
+            if (_handleSettingsChanges) // do not handle event if change was made by loading settings
             {
                 if (cb_autobounds.Checked)
                     AutoDetectMonitors();
                 ApplySettings();
-                UsePreview = cb_preview.Checked;
+                _usePreview = cb_preview.Checked;
                 PreviewScreens();
             }
         }
@@ -780,7 +780,7 @@ namespace DDMM
         {
             Settings.Default.Window_Minimized = true;
             SaveSettings();
-            UsePreview = false;
+            _usePreview = false;
             PreviewScreens();
             Hide();
         }
@@ -803,7 +803,7 @@ namespace DDMM
         private void
             EmergencyRestore() // restores standard settings in case cursor is stuck away from settings window and tray icon
         {
-            if (!Method_CtrlKey && !Method_Delay) // if both are unchecked
+            if (!_methodCtrlKey && !_methodDelay) // if both are unchecked
             {
                 cb_allowcrossingdelay.Checked = true; // restore default values
                 tb_unclipdelay.Text = "150";
@@ -817,7 +817,7 @@ namespace DDMM
         private void SetAutoStart() // sets auto-start with windows
         {
             var key = Registry.CurrentUser.CreateSubKey(StartWithWindowsRegPath);
-            key.SetValue("ddmm", Application.ExecutablePath);
+            key?.SetValue("ddmm", Application.ExecutablePath);
         }
 
         private bool IsAutoStartEnabled() // gets whether aotostart is on
@@ -832,7 +832,7 @@ namespace DDMM
         private void UnSetAutoStart() // disables autostart
         {
             var key = Registry.CurrentUser.CreateSubKey(StartWithWindowsRegPath);
-            key.DeleteValue("ddmm");
+            key?.DeleteValue("ddmm");
         }
 
         private void
@@ -850,15 +850,15 @@ namespace DDMM
         {
             try
             {
-                Directory.CreateDirectory(Directory.GetParent(StartMenuShortcutPath)
+                Directory.CreateDirectory(Directory.GetParent(_startMenuShortcutPath)
                     .ToString()); // create shortcut directory if needed
                 // http://www.geekpedia.com/tutorial125_Create-shortcuts-with-a-.NET-application.html
-                var WshShell = new WshShellClass();
-                IWshShortcut MyShortcut;
-                MyShortcut = (IWshShortcut) WshShell.CreateShortcut(StartMenuShortcutPath);
-                MyShortcut.TargetPath = Application.ExecutablePath;
-                MyShortcut.Description = "Dual Display Mouse Manager";
-                MyShortcut.Save();
+                var wshShell = new WshShellClass();
+                IWshShortcut myShortcut;
+                myShortcut = (IWshShortcut) wshShell.CreateShortcut(_startMenuShortcutPath);
+                myShortcut.TargetPath = Application.ExecutablePath;
+                myShortcut.Description = "Dual Display Mouse Manager";
+                myShortcut.Save();
             }
             catch (Exception)
             {
@@ -868,12 +868,12 @@ namespace DDMM
 
         private bool IsStartMenuShortcutPresent() // returns whether start menu shortcut exists
         {
-            return File.Exists(StartMenuShortcutPath);
+            return File.Exists(_startMenuShortcutPath);
         }
 
         private void UnSetStartMenuShortcut() // removes start menu shortcut
         {
-            Directory.Delete(Directory.GetParent(StartMenuShortcutPath).ToString(), true);
+            Directory.Delete(Directory.GetParent(_startMenuShortcutPath).ToString(), true);
         }
 
         private void
@@ -887,37 +887,37 @@ namespace DDMM
 
         # region Mouse management -------------------------------------------------------------------------------------
 
-        private void MouseMoved(int X, int Y) // called by mouse hook to handle mouse movements
+        private void MouseMoved(int x, int y) // called by mouse hook to handle mouse movements
         {
             // Should modify the following line to happen only on visible form, reducing CPU usage
-            if (UsePreview)
-                l_mousepos.Text = "Mouse: x=" + X + ", y=" + Y;
+            if (_usePreview)
+                l_mousepos.Text = "Mouse: x=" + x + ", y=" + y;
 
-            if (ActivateProgram) // do something about mouse (clipping or unclipping) only if program is activated
+            if (_activateProgram) // do something about mouse (clipping or unclipping) only if program is activated
             {
                 // activate clipping
-                if (!ActiveClip && CanClip) // if no current clip and if clipping is allowed
+                if (!_activeClip && _canClip) // if no current clip and if clipping is allowed
                 {
                     var i = 1;
                     while (i <= 3)
                     {
-                        if (Screens[i].ok)
+                        if (_screens[i].Ok)
                         {
-                            CurrentClipRect = new Rectangle(Screens[i].Left, Screens[i].Top,
-                                Screens[i].Right - Screens[i].Left, Screens[i].Bottom - Screens[i].Top);
-                            if (CurrentClipRect.Contains(X, Y)
+                            _currentClipRect = new Rectangle(_screens[i].Left, _screens[i].Top,
+                                _screens[i].Right - _screens[i].Left, _screens[i].Bottom - _screens[i].Top);
+                            if (_currentClipRect.Contains(x, y)
                             ) // if cursor in one of the screens -> clip to that screen
                             {
-                                DummyClipRect = new Rectangle(Screens[i].Left, Screens[i].Top, Screens[i].Right,
-                                    Screens[i]
+                                _dummyClipRect = new Rectangle(_screens[i].Left, _screens[i].Top, _screens[i].Right,
+                                    _screens[i]
                                         .Bottom); // dummy rectangle with width=right_bound and height=bottom_bound because clipcursor wants a rectangle with left-top-right-bottom and not left-top-width-height
-                                ClipCursor(ref DummyClipRect); // clip the cursor
-                                ActiveClip = true; // flag clipping as active
+                                ClipCursor(ref _dummyClipRect); // clip the cursor
+                                _activeClip = true; // flag clipping as active
                                 notifyIcon1.Icon =
                                     new Icon(GetType(),
                                         "ddmm_screen" + (i == 1 ? "1" : "2") +
                                         ".ico"); // change icon (2 icons for different screens)
-                                CanClip = false; // no need to allow new clipping
+                                _canClip = false; // no need to allow new clipping
                                 break; // skip other screens
                             }
                         }
@@ -927,45 +927,46 @@ namespace DDMM
                 }
 
                 // processes "cursor on the edge of screen" event (unclipping)
-                if (ActiveClip && Method_Delay
+                if (_activeClip && _methodDelay
                 ) // if mouse is clipped and crossing method is "after delay on the border of the screen"
                 {
-                    if (CurrentClipRect.Left == X || CurrentClipRect.Right == X + 1 || CurrentClipRect.Top == Y ||
-                        CurrentClipRect.Bottom == Y + 1) // cursor on border
-                        UnclipTimer.Start(); // start unclipping timer: we will unclip if timer reaches tick
+                    if (_currentClipRect.Left == x || _currentClipRect.Right == x + 1 || _currentClipRect.Top == y ||
+                        _currentClipRect.Bottom == y + 1) // cursor on border
+                        _unclipTimer.Start(); // start unclipping timer: we will unclip if timer reaches tick
                     else
-                        UnclipTimer.Stop(); // if mouse gets away from border: stop timer
+                        _unclipTimer.Stop(); // if mouse gets away from border: stop timer
                 }
             }
         }
 
-        private void MouseTeleport(int X, int Y) // called by keyboard hook to handle mouse teleport
+        private void MouseTeleport(int x, int y) // called by keyboard hook to handle mouse teleport
         {
-            ActivateProgram = false;
+            _activateProgram = false;
             // now that clipping region changed, unlock cursor from previous settings and let clip again
-            ClipCursor(ref OrigClipRect); // clip to original zone
-            CanClip = false; // no need to allow new clipping
-            ActiveClip = false; // no active clip
+            ClipCursor(ref _origClipRect); // clip to original zone
+            _canClip = false; // no need to allow new clipping
+            _activeClip = false; // no active clip
 
             var i = 1;
             while (i <= 3)
             {
-                if (Screens[i].ok)
+                if (_screens[i].Ok)
                 {
-                    CurrentClipRect = new Rectangle(Screens[i].Left, Screens[i].Top, Screens[i].Right - Screens[i].Left,
-                        Screens[i].Bottom - Screens[i].Top);
-                    if (CurrentClipRect.Contains(X, Y)) // if cursor in one of the screens ->
+                    _currentClipRect = new Rectangle(_screens[i].Left, _screens[i].Top,
+                        _screens[i].Right - _screens[i].Left,
+                        _screens[i].Bottom - _screens[i].Top);
+                    if (_currentClipRect.Contains(x, y)) // if cursor in one of the screens ->
                     {
                         var j = i < 3 ? i + 1 : 1; // select the next screen
                         int newX, newY;
-                        while (!Screens[j].ok) j = ++j > 3 ? 1 : j; // if not valid - find the next valid screen
-                        newX = (X - Screens[i].Left) * (Screens[j].Right - Screens[j].Left) /
-                               (Screens[i].Right - Screens[i].Left); // Count relative X for new screen
-                        newY = (Y - Screens[i].Top) * (Screens[j].Bottom - Screens[j].Top) /
-                               (Screens[i].Bottom - Screens[i].Top); // Count relative Y for new screen
-                        Cursor.Position = new Point(Screens[j].Left + newX, Screens[j].Top + newY); // move the cursor
-                        CurrentClipRect = new Rectangle(Screens[j].Left, Screens[j].Top,
-                            Screens[j].Right - Screens[j].Left, Screens[j].Bottom - Screens[j].Top);
+                        while (!_screens[j].Ok) j = ++j > 3 ? 1 : j; // if not valid - find the next valid screen
+                        newX = (x - _screens[i].Left) * (_screens[j].Right - _screens[j].Left) /
+                               (_screens[i].Right - _screens[i].Left); // Count relative X for new screen
+                        newY = (y - _screens[i].Top) * (_screens[j].Bottom - _screens[j].Top) /
+                               (_screens[i].Bottom - _screens[i].Top); // Count relative Y for new screen
+                        Cursor.Position = new Point(_screens[j].Left + newX, _screens[j].Top + newY); // move the cursor
+                        _currentClipRect = new Rectangle(_screens[j].Left, _screens[j].Top,
+                            _screens[j].Right - _screens[j].Left, _screens[j].Bottom - _screens[j].Top);
                         break; // skip other screens
                     }
                 }
@@ -973,8 +974,8 @@ namespace DDMM
                 i++;
             }
 
-            CanClip = true;
-            ActivateProgram = cb_activate.Checked;
+            _canClip = true;
+            _activateProgram = cb_activate.Checked;
             MouseMoved(Cursor.Position.X, Cursor.Position.Y); // complete mouse movement, switch icons, etc
         }
 
@@ -984,21 +985,21 @@ namespace DDMM
 
         private void CtrlKeyPressed()
         {
-            if (ActivateProgram) // ctrl key pressed: do something only if program activated
-                if (Method_CtrlKey && ActiveClip) // if mouse clipped and crossing method is "ctrl key pressed"
+            if (_activateProgram) // ctrl key pressed: do something only if program activated
+                if (_methodCtrlKey && _activeClip) // if mouse clipped and crossing method is "ctrl key pressed"
                 {
-                    ClipCursor(ref OrigClipRect); // unclip (restore original clipping zone)
-                    ActiveClip = false; // flag clipping as inactive
-                    CanClip = false; // prevent new clipping while ctrl is hold
+                    ClipCursor(ref _origClipRect); // unclip (restore original clipping zone)
+                    _activeClip = false; // flag clipping as inactive
+                    _canClip = false; // prevent new clipping while ctrl is hold
                     notifyIcon1.Icon = new Icon(GetType(), "ddmm_normal.ico");
                 }
         }
 
         private void CtrlKeyReleased()
         {
-            if (ActivateProgram)
-                if (Method_CtrlKey)
-                    CanClip = true; // flag new clipping as allowed when ctrl key is released
+            if (_activateProgram)
+                if (_methodCtrlKey)
+                    _canClip = true; // flag new clipping as allowed when ctrl key is released
         }
 
         # endregion
@@ -1034,7 +1035,7 @@ namespace DDMM
             Show();
             WindowState = FormWindowState.Normal;
             TopMost = true;
-            UsePreview = cb_preview.Checked;
+            _usePreview = cb_preview.Checked;
             PreviewScreens();
             Focus();
             Focus();
@@ -1065,12 +1066,6 @@ namespace DDMM
 
         # region other controls ---------------------------------------------------------------------------------------
 
-        private void lk_link_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
-        {
-            var sInfo = new ProcessStartInfo(e.Link.LinkData.ToString());
-            Process.Start(sInfo);
-        }
-
         private void DDMM_Form_Load(object sender, EventArgs e)
         {
         }
@@ -1082,7 +1077,7 @@ namespace DDMM
                 e.Cancel = true;
                 Hide();
 
-                UsePreview = false;
+                _usePreview = false;
 
                 Settings.Default.Window_Minimized = true;
                 Settings.Default.Save(); // save default windows state
@@ -1092,14 +1087,14 @@ namespace DDMM
         private void just_before_ApplicationExit(object sender, EventArgs e) // processing on application exit event
         {
             // restore original cursor clipping state
-            ClipCursor(ref OrigClipRect);
+            ClipCursor(ref _origClipRect);
             // unregister all the hooks
             for (var i = 1; i <= 3; i++)
-                Screens[i].form_s.LocationChanged -= CheckWhyPreviewMoved;
+                _screens[i].FormS.LocationChanged -= CheckWhyPreviewMoved;
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
-            PreviewTimer.Tick -= PreviewRestoreAfterTimer;
-            UnhookWindowsHookEx(mhook); // remove global mouse hook
-            UnhookWindowsHookEx(khook); // remove global keyboard hook
+            _previewTimer.Tick -= PreviewRestoreAfterTimer;
+            UnhookWindowsHookEx(_mhook); // remove global mouse hook
+            UnhookWindowsHookEx(_khook); // remove global keyboard hook
         }
 
         # endregion

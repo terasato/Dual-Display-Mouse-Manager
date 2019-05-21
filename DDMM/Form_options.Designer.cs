@@ -1,6 +1,6 @@
 namespace DDMM
 {
-    partial class DDMM_Form
+    partial class DdmmForm
     {
         /// <summary>
         /// Required designer variable.
@@ -29,7 +29,7 @@ namespace DDMM
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(DDMM_Form));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(DdmmForm));
             this.gb_screenboundaries = new System.Windows.Forms.GroupBox();
             this.cb_preview = new System.Windows.Forms.CheckBox();
             this.cb_autobounds = new System.Windows.Forms.CheckBox();
@@ -556,7 +556,7 @@ namespace DDMM
             this.KeyPreview = true;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.Name = "DDMM_Form";
+            this.Name = "DdmmForm";
             this.ShowInTaskbar = false;
             this.Text = "Dual Display Mouse Manager v1.1";
             this.WindowState = System.Windows.Forms.FormWindowState.Minimized;

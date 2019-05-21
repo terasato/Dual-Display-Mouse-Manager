@@ -1,6 +1,6 @@
 namespace DDMM
 {
-    partial class Form_screen
+    partial class FormScreen
     {
         /// <summary>
         /// Required designer variable.
@@ -41,7 +41,7 @@ namespace DDMM
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.Name = "Form_screen";
+            this.Name = "FormScreen";
             this.Opacity = 0.4;
             this.ShowInTaskbar = false;
             this.Text = "Form_s1";

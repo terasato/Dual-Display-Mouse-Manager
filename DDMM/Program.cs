@@ -32,13 +32,13 @@ namespace DDMM
 
         private void this_StartupNextInstance(object sender, StartupNextInstanceEventArgs e)
         {
-            var form = MainForm as DDMM_Form;
-            form.NotifyNewInstance();
+            var form = MainForm as DdmmForm;
+            form?.NotifyNewInstance();
         }
 
         protected override void OnCreateMainForm()
         {
-            MainForm = new DDMM_Form();
+            MainForm = new DdmmForm();
         }
     }
 }
