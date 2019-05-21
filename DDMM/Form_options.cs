@@ -19,13 +19,76 @@ namespace DDMM
 {
     public partial class DdmmForm : Form
     {
-        # region Class constructor ------------------------------------------------------------------------------------
+        private const string StartWithWindowsRegPath // path to registry entry for automatic startup
+            = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+        // Allow preview rectangles to draw over the taskbar
+        private const uint SwpNosize = 0x0001;
+        private const uint SwpNomove = 0x0002;
+        private const uint SwpNoactivate = 0x0010;
+        private static readonly int WhMouseLl = 14;
+        private static readonly int WhKeyboardLl = 13;
+        private static readonly int WmKeydown = 0x100;
+        private static readonly int WmKeyup = 0x101;
+
+        private readonly Timer _clipTimer; // sets clipping again every second or so
+
+        private readonly HookProc _kCallback;
+        private readonly IntPtr _khook; // Hook pointers for mouse and keyboard hooks
+
+        private readonly HookProc _mCallback;
+
+        private readonly IntPtr _mhook; // Hook pointers for mouse and keyboard hooks
+
+        private readonly Timer
+            _previewTimer; // updates preview screens when moved, delayed to allow less overhead on system changes
+
+        private readonly Timer
+            _reclipTimer; // sets clipping again after N milliseconds of letting the cursor cross border
+
+        private readonly Screen[] _screens;
+
+        private readonly string _startMenuShortcutPath = // path to start menu shortcut
+            Path.Combine(Path.Combine(Path.Combine( // concatenate "start menu", "programs", "DDMM", lnk file
+                Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs"), "DDMM"), "ddmm.lnk");
+
+        private readonly Color _tbColorNok = SystemColors.Control;
+
+        private readonly Color
+            _tbColorOk = Color.White; // textboxes color when input values are correct / incorrect: white / grey
+
+        private readonly Timer _unclipTimer; // removes clipping after N milliseconds on screen border
+
+        private bool _activateProgram = false; // is the program (mouse management) activated
+        private bool _activeClip = false; // is the cursor currently clipped
+
+        private bool
+            _canClip = true; // is it allowed to activate clipping (it is not allowed when holding ctrl key, and not allowed during 100ms when we release cursor)
+
+        private Rectangle _currentClipRect; // current clipping zone (used to reactivate clipping periodically)
+
+        private Rectangle
+            _dummyClipRect; // dummy Rectangle variable to pass to ClipCursor(), because it seems that Clipcursor() needs a "top-left-right-bottom" rectangle instead of c# standard "top-left-width-height"
+
+        private bool _handleSettingsChanges = false; // will be set to true after loading settings
+        private bool _methodCtrlKey; // do we use "release cursor on ctrl key" feature
+
+        private bool _methodDelay; // do we use "release cursor after delay" feature
+
+        private Rectangle _origClipRect; // original clipping zone (used to restore previous state)
+        private int _unClipDelay; // cursor release delay
+
+        private bool
+            _updatingPreview =
+                false; // set to true when updating preview rectangles, because sometimes desktop managers throw them around
+
+        private bool _useAutoBounds = false; // Uses automatic screen boundary control
+        private bool _useMouseJump; // do we use "mouse teleport" feature on pressing Ctrl + ~
+        private bool _usePreview = false; // Uses preview screens for region selection
 
         public DdmmForm()
         {
             InitializeComponent();
-
-            # region Variables ----------------------------------------------------------------------------------------
 
             // screen objects, that will store screen coordinates and contain a preview rectangle form
             _screens = new Screen[4]; // we will use cells 1 to 3 only - I don't like having "screen 2" in cell 1
@@ -41,10 +104,6 @@ namespace DDMM
 
             GetClipCursor(ref _origClipRect); // store original clipping zone
             _currentClipRect = new Rectangle(); // current clipping zone
-
-            # endregion
-
-            #region Mouse clipping -----------------------------------------------------------------------------------
 
             _clipTimer =
                 new Timer(); // timer to reactivate mouse clipping periodically (because alt-tabbing between 2 other apps will deactivate clipping)
@@ -64,25 +123,13 @@ namespace DDMM
             _previewTimer.Interval = 1000; // 1 sec delay allowed to prevent system overhead
             _previewTimer.Tick += PreviewRestoreAfterTimer;
 
-            #endregion
-
-            #region Mouse hook ---------------------------------------------------------------------------------------
-
             // get mouse coordinates even if app runs on background (hook)
             _mCallback = LowLevelMouseProc;
             _mhook = SetWindowsHookEx(WhMouseLl, _mCallback, GetModuleHandle(null), 0);
 
-            #endregion
-
-            #region Keyboard hook ------------------------------------------------------------------------------------
-
             // get key presses even if app runs on background (hook)
             _kCallback = LowLevelKeyboardProc;
             _khook = SetWindowsHookEx(WhKeyboardLl, _kCallback, GetModuleHandle(null), 0);
-
-            #endregion
-
-            #region Display hook -------------------------------------------------------------------------------------
 
             //// get notifications about display windows focus changes (hook)
             //d_callback = new HookProc(DisplayCtrlProc);
@@ -93,99 +140,17 @@ namespace DDMM
             // Handle DisplaySettingsChanged event to recompute boundaries on resolution change of any kind
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
 
-            #endregion
-
-            #region Application exit hook ----------------------------------------------------------------------------
-
             Application.ApplicationExit += just_before_ApplicationExit;
-
-            #endregion
-
-            # region Settings -----------------------------------------------------------------------------------------
 
             LoadSettings(); // load previously input settings
             ApplySettings(); // apply current settings
             _handleSettingsChanges = true; // so that further changes in settings will trigger data validation
-
-            # endregion
         }
-
-        # endregion
 
         private void l_debug_Click(object sender, EventArgs e)
         {
             l_debug.Text = "";
         }
-
-        # region Class fields -----------------------------------------------------------------------------------------
-
-        private class Screen
-        {
-            public readonly FormScreen FormS; // preview form (colored rectangle)
-            public int Left, Right, Top, Bottom; // coordinates
-            public bool Ok; // are screen coordinates ok
-
-            public Screen()
-            {
-                FormS = new FormScreen();
-            }
-        }
-
-        private readonly Screen[] _screens;
-
-        private readonly IntPtr _mhook; // Hook pointers for mouse and keyboard hooks
-        private readonly IntPtr _khook; // Hook pointers for mouse and keyboard hooks
-
-        private bool _handleSettingsChanges = false; // will be set to true after loading settings
-
-        private bool
-            _updatingPreview =
-                false; // set to true when updating preview rectangles, because sometimes desktop managers throw them around
-
-        private Rectangle _origClipRect; // original clipping zone (used to restore previous state)
-        private Rectangle _currentClipRect; // current clipping zone (used to reactivate clipping periodically)
-
-        private Rectangle
-            _dummyClipRect; // dummy Rectangle variable to pass to ClipCursor(), because it seems that Clipcursor() needs a "top-left-right-bottom" rectangle instead of c# standard "top-left-width-height"
-
-        private bool _activateProgram = false; // is the program (mouse management) activated
-        private bool _activeClip = false; // is the cursor currently clipped
-
-        private bool
-            _canClip = true; // is it allowed to activate clipping (it is not allowed when holding ctrl key, and not allowed during 100ms when we release cursor)
-
-        private bool _useAutoBounds = false; // Uses automatic screen boundary control
-        private bool _usePreview = false; // Uses preview screens for region selection
-
-        private readonly Color
-            _tbColorOk = Color.White; // textboxes color when input values are correct / incorrect: white / grey
-
-        private readonly Color _tbColorNok = SystemColors.Control;
-
-        private bool _methodDelay; // do we use "release cursor after delay" feature
-        private bool _methodCtrlKey; // do we use "release cursor on ctrl key" feature
-        private int _unClipDelay; // cursor release delay
-        private bool _useMouseJump; // do we use "mouse teleport" feature on pressing Ctrl + ~
-
-        private const string StartWithWindowsRegPath // path to registry entry for automatic startup
-            = @"Software\Microsoft\Windows\CurrentVersion\Run";
-
-        private readonly string _startMenuShortcutPath = // path to start menu shortcut
-            Path.Combine(Path.Combine(Path.Combine( // concatenate "start menu", "programs", "DDMM", lnk file
-                Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs"), "DDMM"), "ddmm.lnk");
-
-        private readonly Timer _clipTimer; // sets clipping again every second or so
-        private readonly Timer _unclipTimer; // removes clipping after N milliseconds on screen border
-
-        private readonly Timer
-            _reclipTimer; // sets clipping again after N milliseconds of letting the cursor cross border
-
-        private readonly Timer
-            _previewTimer; // updates preview screens when moved, delayed to allow less overhead on system changes
-
-        # endregion
-
-        #region Mouse clipping ---------------------------------------------------------------------------------------
 
         /* Mouse clipping is lost every time user switches from an application to another.
          * But as you will read on the internet, "Global hooks are not supported in the .NET Framework", 
@@ -223,10 +188,6 @@ namespace DDMM
             _reclipTimer.Stop(); // stop this timer
         }
 
-        #endregion
-
-        #region Hook definitions -------------------------------------------------------------------------------------
-
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetModuleHandle(string moduleName);
 
@@ -239,29 +200,11 @@ namespace DDMM
         [DllImport("user32.dll")]
         private static extern bool UnhookWindowsHookEx(IntPtr hhk);
 
-        #endregion
-
-        #region Mouse hook -------------------------------------------------------------------------------------------
-
-        private readonly HookProc _mCallback;
-        private static readonly int WhMouseLl = 14;
-
-        private delegate IntPtr HookProc(int nCode, uint wParam, IntPtr lParam);
-
         private IntPtr LowLevelMouseProc(int nCode, uint wParam, IntPtr lParam)
         {
             MouseMoved(Cursor.Position.X, Cursor.Position.Y); // action: call MouseMoved with coordinates
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
-
-        #endregion
-
-        #region Keyboard hook ----------------------------------------------------------------------------------------
-
-        private readonly HookProc _kCallback;
-        private static readonly int WhKeyboardLl = 13;
-        private static readonly int WmKeydown = 0x100;
-        private static readonly int WmKeyup = 0x101;
 
         private IntPtr LowLevelKeyboardProc(int nCode, uint wParam, IntPtr lParam)
         {
@@ -286,10 +229,6 @@ namespace DDMM
 
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
-
-        #endregion
-
-        #region Display hook -----------------------------------------------------------------------------------------
 
         private void AutoDetectMonitors() // self-explanatory
         {
@@ -402,15 +341,6 @@ namespace DDMM
             }
         }
 
-        #endregion
-
-        # region Draw over taskbar ------------------------------------------------------------------------------------
-
-        // Allow preview rectangles to draw over the taskbar
-        private const uint SwpNosize = 0x0001;
-        private const uint SwpNomove = 0x0002;
-        private const uint SwpNoactivate = 0x0010;
-
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy,
             uint uFlags);
@@ -421,10 +351,6 @@ namespace DDMM
                 SetWindowPos(_screens[i].FormS.Handle, IntPtr.Zero, 0, 0, 0, 0,
                     SwpNosize | SwpNomove | SwpNoactivate);
         }
-
-        # endregion
-
-        # region Settings ---------------------------------------------------------------------------------------------
 
         private void LoadSettings() // loads settings in file
         {
@@ -810,10 +736,6 @@ namespace DDMM
             }
         }
 
-        # endregion
-
-        # region Autostart --------------------------------------------------------------------------------------------
-
         private void SetAutoStart() // sets auto-start with windows
         {
             var key = Registry.CurrentUser.CreateSubKey(StartWithWindowsRegPath);
@@ -841,10 +763,6 @@ namespace DDMM
             if (cb_startwithwindows.Checked) SetAutoStart();
             else UnSetAutoStart();
         }
-
-        # endregion
-
-        # region Start Menu Shortcut ----------------------------------------------------------------------------------
 
         private void SetStartMenuShortcut() // create start menu shortcut
         {
@@ -882,10 +800,6 @@ namespace DDMM
             if (cb_startmenushortcut.Checked) SetStartMenuShortcut();
             else UnSetStartMenuShortcut();
         }
-
-        # endregion
-
-        # region Mouse management -------------------------------------------------------------------------------------
 
         private void MouseMoved(int x, int y) // called by mouse hook to handle mouse movements
         {
@@ -979,10 +893,6 @@ namespace DDMM
             MouseMoved(Cursor.Position.X, Cursor.Position.Y); // complete mouse movement, switch icons, etc
         }
 
-        # endregion
-
-        # region Keyboard management ----------------------------------------------------------------------------------
-
         private void CtrlKeyPressed()
         {
             if (_activateProgram) // ctrl key pressed: do something only if program activated
@@ -1002,10 +912,6 @@ namespace DDMM
                     _canClip = true; // flag new clipping as allowed when ctrl key is released
         }
 
-        # endregion
-
-        # region Main form and previews show / hide -------------------------------------------------------------------
-
         private void DDMM_Form_Deactivate(object sender, EventArgs e) // on form lost focus
         {
             // Keeping just in case
@@ -1015,10 +921,6 @@ namespace DDMM
         {
             // Keeping the procedure just in case
         }
-
-        # endregion
-
-        # region systray icon -----------------------------------------------------------------------------------------
 
         private void notifyIcon1_MouseClick(object sender, MouseEventArgs e) // systray icon click
         {
@@ -1062,10 +964,6 @@ namespace DDMM
             Application.Exit();
         }
 
-        # endregion
-
-        # region other controls ---------------------------------------------------------------------------------------
-
         private void DDMM_Form_Load(object sender, EventArgs e)
         {
         }
@@ -1097,6 +995,18 @@ namespace DDMM
             UnhookWindowsHookEx(_khook); // remove global keyboard hook
         }
 
-        # endregion
+        private class Screen
+        {
+            public readonly FormScreen FormS; // preview form (colored rectangle)
+            public int Left, Right, Top, Bottom; // coordinates
+            public bool Ok; // are screen coordinates ok
+
+            public Screen()
+            {
+                FormS = new FormScreen();
+            }
+        }
+
+        private delegate IntPtr HookProc(int nCode, uint wParam, IntPtr lParam);
     }
 }
