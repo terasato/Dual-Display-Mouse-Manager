@@ -950,8 +950,7 @@ namespace DDMM
 
         private void DDMM_Form_Load(object sender, EventArgs e)
         {
-            lk_link.Links.Remove(lk_link.Links[0]);
-            lk_link.Links.Add(0, lk_link.Text.Length, "http://ddmm.sf.net/");
+            
         }
 
         private void DDMM_Form_FormClosing(object sender, FormClosingEventArgs e)
